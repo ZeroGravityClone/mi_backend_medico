@@ -36,3 +36,13 @@ def get_current_user(
         raise credentials_exception
         
     return user
+
+def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Valida que el usuario actual tenga rol ADMIN."""
+    
+    if str(current_user.role).upper() != "ADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permisos suficientes para realizar esta acción."
+        )
+    return current_user
