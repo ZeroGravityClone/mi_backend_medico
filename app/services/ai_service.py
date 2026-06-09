@@ -7,19 +7,19 @@ class AIService:
         self.client = Groq(api_key=settings.GROQ_API_KEY)
 
     def get_clinical_assistant_response(self, user_message: str) -> str:
-        """Envía el mensaje del doctor a Groq estructurando el rol clínico de la IA."""
+        """Envía la consulta a Groq estructurando el rol de asistente de Archivo y RRHH."""
         
+        # --- NUEVO SYSTEM PROMPT PARA ARCHIVO DE TALENTO HUMANO ---
         system_prompt = (
-            "Eres un asistente de IA clínico especializado, diseñado para apoyar a "
-            "profesionales de la salud en la gestión de su consulta médica. "
-            "Analiza síntomas, resume historiales médicos o sugiere diagnósticos "
-            "diferenciales con un tono profesional, científico y empático. "
-            "ADVERTENCIA: Tus respuestas son únicamente de apoyo informativo y no "
-            "reemplazan el diagnóstico ni el juicio clínico del médico a cargo."
+            "Eres el asistente virtual especializado en la Gestión de Archivos y "
+            "Recursos Humanos del departamento de Talento Humano del hospital. "
+            "Tu objetivo es ayudar al personal de archivo a organizar expedientes, "
+            "resolver dudas sobre digitalización de documentos, y aplicar la normativa "
+            "laboral para trabajadores (Activos, Jubilados, Pensionados, Vacaciones, Fallecidos). "
+            "Responde de forma profesional, estructurada y basada en buenas prácticas de archivología."
         )
 
         try:
-
             completion = self.client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[
@@ -29,9 +29,7 @@ class AIService:
                 temperature=0.3,
                 max_tokens=1024,
             )
-            
             ai_reply = completion.choices[0].message.content
             return ai_reply if ai_reply else "La IA no generó ninguna respuesta."
-            
         except Exception as e:
             return f"Error al comunicarse con el servicio de IA: {str(e)}"
