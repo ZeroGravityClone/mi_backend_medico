@@ -8,6 +8,8 @@ class Patient(Base):
     id = Column(Integer, primary_key=True, index=True)
     first_name = Column(String, nullable=False)
     last_name = Column(String, nullable=False)
+    cedula = Column(String, unique=True, index=True, nullable=True) # Usamos nullable=True para no romper registros viejos
+    address = Column(String, nullable=True)
     birth_date = Column(Date, nullable=False)
     phone = Column(String, nullable=True)
     email = Column(String, unique=True, index=True, nullable=True)

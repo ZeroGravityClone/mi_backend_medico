@@ -26,17 +26,27 @@ def read_patients(
 def create_patient(
     patient_in: PatientCreate,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(get_current_admin)  # Requiere Token y Rol ADMIN
+    current_admin: User = Depends(get_current_admin)
 ):
-    """Registra un nuevo paciente (Solo Administradores)."""
+    """Registra un nuevo expediente de trabajador (Solo Administradores)."""
     repo = PatientRepository(db)
     
+    # 1. Validar duplicado de cédula
+    if patient_in.cedula:
+        existing_cedula = repo.get_by_cedula(patient_in.cedula)
+        if existing_cedula:
+            raise HTTPException(
+                status_code=400,
+                detail="Ya existe un expediente registrado con esa Cédula de Identidad."
+            )
+            
+    # 2. Validar duplicado de email
     if patient_in.email:
-        existing = repo.get_by_email(patient_in.email)
-        if existing:
+        existing_email = repo.get_by_email(patient_in.email)
+        if existing_email:
             raise HTTPException(
                 status_code=400, 
-                detail="Ya existe un paciente con este correo electrónico."
+                detail="Ya existe un expediente con este correo electrónico."
             )
             
     return repo.create(patient_in)
