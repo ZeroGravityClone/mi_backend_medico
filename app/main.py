@@ -1,19 +1,24 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles  # <-- IMPORTANTE PARA LOS ARCHIVOS
 
 from app.api.endpoints.users import router as users_router
 from app.api.endpoints.auth import router as auth_router
 from app.api.endpoints.patients import router as patients_router
 from app.api.endpoints.ai import router as ai_router
+from app.api.endpoints.loans import router as loans_router
+
+# Crear la carpeta automáticamente en Windows 10 si no existe al arrancar
+os.makedirs("uploads", exist_ok=True)
 
 app = FastAPI(title="Sistema Médico API", version="1.0.0")
 
 # --- CONFIGURACIÓN DE CORS ---
-
 origins = [
-    "http://localhost:3000",      # Puerto clásico de React
-    "http://localhost:5173",      # Puerto estándar de React usando Vite
-    "http://127.0.0.1:5173",      # Puerto localhost para desarrollo
+    "http://localhost:3000",      
+    "http://localhost:5173",      
+    "http://127.0.0.1:5173",      
 ]
 
 app.add_middleware(
@@ -29,6 +34,10 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(patients_router)
 app.include_router(ai_router)
+app.include_router(loans_router)
+
+# Montar la carpeta de archivos subidos para poder ver los PDFs/JPGs desde React
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 @app.get("/")
 def read_root():
