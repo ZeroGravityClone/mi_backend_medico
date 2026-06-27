@@ -32,3 +32,18 @@ class PatientResponse(PatientBase):
 
     class Config:
         from_attributes = True
+
+class DocumentResponse(BaseModel):
+    id: int
+    patient_id: int
+    file_name: str
+    file_path: str
+    category: str
+    folder_number: Optional[str] = None
+    qr_code: Optional[str] = None
+    document_status: str
+    uploaded_by: Optional[int] = None
+    uploaded_at: datetime
+
+    class Config:
+        from_attributes = True
