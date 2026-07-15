@@ -16,31 +16,24 @@ def login_access_token(
     form_data: OAuth2PasswordRequestForm = Depends()
 ):
     repo = UserRepository(db)
-    user = repo.get_user_by_email(form_data.username)
+    # form_data.username se asocia ahora directamente al username de la base de datos
+    user = repo.get_user_by_username(form_data.username)
     
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Correo o contraseña incorrectos"
-        )
+        raise HTTPException(status_code=400, detail="Usuario o contraseña incorrectos.")
     
     hashed_password_str = str(user.hashed_password)
     if not verify_password(form_data.password, hashed_password_str):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Correo o contraseña incorrectos"
-        )
+        raise HTTPException(status_code=400, detail="Usuario o contraseña incorrectos.")
     
     user_is_active = bool(user.is_active)
     if not user_is_active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Usuario inactivo"
-        )
+        raise HTTPException(status_code=400, detail="Usuario inactivo.")
 
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    # El Token guardará el username en su subject
     access_token = create_access_token(
-        subject=user.email, expires_delta=access_token_expires
+        subject=user.username, expires_delta=access_token_expires
     )
     
     return {

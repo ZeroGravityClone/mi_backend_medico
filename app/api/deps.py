@@ -14,24 +14,22 @@ def get_current_user(
     db: Session = Depends(get_db),
     token: str = Depends(oauth2_scheme)
 ) -> User:
-    """Valida el token JWT y retorna el usuario actual si es válido."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="No se pudieron validar las credenciales",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        email: str = payload.get("sub")  # type: ignore
-        if email is None:
+        # "sub" ahora contiene el username del usuario
+        username: str = payload.get("sub")  # type: ignore
+        if username is None:
             raise credentials_exception
-        token_data = TokenData(email=email)
     except JWTError:
         raise credentials_exception
         
     repo = UserRepository(db)
-    user = repo.get_user_by_email(str(token_data.email))
+    user = repo.get_user_by_username(username)  # <-- Buscamos por username
     if user is None:
         raise credentials_exception
         

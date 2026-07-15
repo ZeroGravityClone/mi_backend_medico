@@ -39,6 +39,7 @@ app.include_router(loans_router)
 # Montar la carpeta de archivos subidos para poder ver los PDFs/JPGs desde React
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
-@app.get("/")
-def read_root():
-    return {"message": "¡Bienvenido al Backend del Sistema Médico!"}
+# --- NUEVO CÓDIGO CORREGIDO PARA MOSTRAR REACT ---
+# Montamos la carpeta "dist" en la ruta principal "/" para servir la interfaz web.
+# Esta instrucción debe ser obligatoriamente la última línea del archivo para evitar bloqueos.
+app.mount("/", StaticFiles(directory="dist", html=True), name="static")
