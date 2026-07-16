@@ -5,8 +5,9 @@ from typing import Optional
 class PatientBase(BaseModel):
     first_name: str
     last_name: str
-    cedula: Optional[str] = None   # <-- NUEVO
-    address: Optional[str] = None  # <-- NUEVO
+    cedula: Optional[str] = None   
+    address: Optional[str] = None
+    cargo: Optional[str] = None  
     birth_date: date
     phone: Optional[str] = None
     email: Optional[EmailStr] = None
@@ -18,8 +19,9 @@ class PatientCreate(PatientBase):
 class PatientUpdate(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
-    cedula: Optional[str] = None   # <-- NUEVO
-    address: Optional[str] = None  # <-- NUEVO
+    cedula: Optional[str] = None   
+    address: Optional[str] = None
+    cargo: Optional[str] = None  
     birth_date: Optional[date] = None
     phone: Optional[str] = None
     email: Optional[EmailStr] = None
@@ -47,3 +49,9 @@ class DocumentResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class DocumentUpdate(BaseModel):
+    file_name: Optional[str] = None
+    category: Optional[str] = None
+    folder_number: Optional[str] = None
+    document_status: Optional[str] = None

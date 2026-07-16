@@ -8,6 +8,7 @@ from app.api.endpoints.auth import router as auth_router
 from app.api.endpoints.patients import router as patients_router
 from app.api.endpoints.ai import router as ai_router
 from app.api.endpoints.loans import router as loans_router
+from app.api.endpoints.alerts import router as alerts_router
 
 # Crear la carpeta automáticamente en Windows 10 si no existe al arrancar
 os.makedirs("uploads", exist_ok=True)
@@ -35,6 +36,7 @@ app.include_router(users_router)
 app.include_router(patients_router)
 app.include_router(ai_router)
 app.include_router(loans_router)
+app.include_router(alerts_router)
 
 # Montar la carpeta de archivos subidos para poder ver los PDFs/JPGs desde React
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")

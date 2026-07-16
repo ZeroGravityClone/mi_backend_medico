@@ -25,6 +25,7 @@ class PatientRepository:
             last_name=patient_in.last_name,
             cedula=patient_in.cedula,
             address=patient_in.address,
+            cargo=patient_in.cargo,
             birth_date=patient_in.birth_date,
             phone=patient_in.phone,
             email=patient_in.email,

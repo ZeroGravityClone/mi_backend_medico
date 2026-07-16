@@ -1,22 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Form # <-- Agregados File, UploadFile, Form
+from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Form
 from sqlalchemy.orm import Session
 from typing import List
-import shutil # <-- Requerido para escribir archivos en disco
-import os     # <-- Requerido para crear directorios de almacenamiento
-from datetime import datetime
+import shutil
+import os
+from datetime import datetime, date
+
+from app.db.database import get_db
+from app.schemas.patient import PatientCreate, PatientResponse, PatientUpdate, DocumentResponse, DocumentUpdate
+from app.repositories.patient_repository import PatientRepository
+from app.api.deps import get_current_user, get_current_admin
+from app.models.user import User
+from app.models.patient import PatientDocument
 
 from app.core.vision_helper import convert_pdf_to_base64_images, encode_image_to_base64
 from app.core.validation_helper import normalize_date, verify_document_consistency
 from app.services.ai_service import AIService
-from app.core.pdf_helper import extract_text_from_pdf
-from app.services.ai_service import AIService
-from app.db.database import get_db
-# Agregado "DocumentResponse" para la validación de salida de metadatos
-from app.schemas.patient import PatientCreate, PatientResponse, PatientUpdate, DocumentResponse
-from app.repositories.patient_repository import PatientRepository
-from app.api.deps import get_current_user, get_current_admin
-from app.models.user import User
-from app.models.patient import PatientDocument # <-- Requerido para insertar en la tabla de documentos
 
 router = APIRouter(prefix="/patients", tags=["patients"])
 
@@ -25,7 +23,7 @@ def read_patients(
     skip: int = 0, 
     limit: int = 100, 
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)  # Requiere Token válido
+    current_user: User = Depends(get_current_user)
 ):
     """Lista todos los pacientes."""
     repo = PatientRepository(db)
@@ -66,7 +64,7 @@ def update_patient(
     patient_id: int,
     patient_in: PatientUpdate,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(get_current_admin)  # Protegido para ADMIN
+    current_admin: User = Depends(get_current_admin)
 ):
     """Actualiza la información de un paciente (Solo Administradores)."""
     repo = PatientRepository(db)
@@ -81,7 +79,7 @@ def update_patient(
 def delete_patient(
     patient_id: int,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(get_current_admin)  # Protegido para ADMIN
+    current_admin: User = Depends(get_current_admin)
 ):
     """Elimina un paciente del sistema (Solo Administradores)."""
     repo = PatientRepository(db)
@@ -97,7 +95,7 @@ def delete_patient(
 #             NUEVOS ENDPOINTS: NÚCLEO DE GESTIÓN DOCUMENTAL (DMS)
 # ===========================================================================
 
-# 1. SUBIR, INDEXAR Y REGISTRAR METADATA DE DOCUMENTO (Solo visible/ejecutable si el token es válido)
+# 1. SUBIR, INDEXAR Y REGISTRAR METADATA DE DOCUMENTO DE FORMA MANUAL
 @router.post("/{patient_id}/documents", status_code=status.HTTP_201_CREATED)
 def upload_patient_document(
     patient_id: int,
@@ -116,19 +114,15 @@ def upload_patient_document(
     if not patient:
         raise HTTPException(status_code=404, detail="Expediente de personal no encontrado.")
 
-    # Asegurar que exista el directorio físico en el servidor
     os.makedirs("uploads", exist_ok=True)
 
-    # Generar nomenclatura de archivo única para auditoría
     timestamp = int(datetime.utcnow().timestamp())
     safe_filename = f"{patient_id}_{timestamp}_{file.filename}"
     file_path = f"uploads/{safe_filename}"
 
-    # Escribir el archivo físico en disco duro
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # Registrar metadata limpia en base de datos MySQL/PostgreSQL
     new_doc = PatientDocument(
         patient_id=patient_id,
         file_name=description,
@@ -137,7 +131,7 @@ def upload_patient_document(
         folder_number=folder_number,
         qr_code=qr_code,
         document_status=document_status,
-        uploaded_by=current_user.id  # Auditoría automática del transcriptor
+        uploaded_by=current_user.id
     )
     db.add(new_doc)
     db.commit()
@@ -146,7 +140,7 @@ def upload_patient_document(
     return {"message": "Documento indexado con éxito en la bóveda", "file_path": file_path}
 
 
-# 2. OBTENER EXPEDIENTE DOCUMENTAL COMPLETO (Metadata y Auditoría)
+# 2. OBTENER EXPEDIENTE DOCUMENTAL COMPLETO (Por Paciente)
 @router.get("/{patient_id}/documents", response_model=List[DocumentResponse])
 def get_patient_documents(
     patient_id: int,
@@ -157,51 +151,39 @@ def get_patient_documents(
     documents = db.query(PatientDocument).filter(PatientDocument.patient_id == patient_id).all()
     return documents
 
-@router.get("/documents/all", response_model=List[DocumentResponse])
-def get_all_documents(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Obtiene el listado global de TODOS los documentos indexados en el hospital."""
-    documents = db.query(PatientDocument).order_by(PatientDocument.id.desc()).all()
-    return documents
 
-# 3. ESCANEAR, CONVERTIR, EVALUAR VISUALMENTE CON IA Y VALIDAR INTEGRIDAD (NUEVO PIPELINE DMS)
+# 3. ESCANEAR, CONVERTIR, EVALUAR VISUALMENTE CON IA Y VALIDAR INTEGRIDAD (Llama 4 Scout)
 @router.post("/{patient_id}/documents/auto", status_code=status.HTTP_201_CREATED)
 async def upload_document_auto(
     patient_id: int,
     file: UploadFile = File(...),
-    mode: str = "fast",  # "fast" (primera pág.) o "full" (todo el documento)
+    mode: str = "fast",  # "fast" o "full"
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Pipeline DMS Inteligente: Recibe PDF/Imagen, procesa con IA de OpenAI en Groq, valida metadata y guarda."""
+    """Pipeline DMS Premium: Recibe el escaneo de una carpeta, extrae la metadata con Llama 4, valida y guarda."""
     repo = PatientRepository(db)
     patient = repo.get_by_id(patient_id)
     if not patient:
         raise HTTPException(status_code=404, detail="Expediente de personal no encontrado.")
 
-    # 1. Leer archivo en memoria
     file_bytes = await file.read()
     content_type = str(file.content_type)
     
-    # 2. Generar lista de imágenes en Base64 según el tipo de archivo recibido
     base64_images = []
     if "pdf" in content_type:
         base64_images = convert_pdf_to_base64_images(file_bytes, mode=mode)
     elif "image" in content_type:
         base64_images = [encode_image_to_base64(file_bytes)]
     else:
-        raise HTTPException(status_code=400, detail="Formato de archivo no soportado. Debe ser PDF o Imagen.")
+        raise HTTPException(status_code=400, detail="Formato de archivo no soportado.")
 
     if not base64_images:
-        raise HTTPException(status_code=400, detail="No se pudo procesar la imagen del documento para análisis de IA.")
+        raise HTTPException(status_code=400, detail="No se pudo procesar el documento visual.")
 
-    # 3. Llamar al modelo de Visión de Groq para análisis visual
     ai_service = AIService()
     ai_data = ai_service.classify_document_vision(base64_images, mode=mode)
 
-    # Extraer variables devueltas por la IA
     ai_category = ai_data.get("category", "Otros")
     ai_name = ai_data.get("extracted_name", "")
     ai_cedula = ai_data.get("extracted_cedula", "")
@@ -209,11 +191,9 @@ async def upload_document_auto(
     has_signatures = ai_data.get("has_signatures_and_stamps", False)
     ai_title = ai_data.get("suggested_title", "Digitalización")
 
-    # 4. CAPA DE VALIDACIÓN Y NORMALIZACIÓN DEL BACKEND
-    # Normalizar Fecha
+    # Validación y Normalización
     normalized_date_str = normalize_date(ai_date_raw)
     
-    # Verificar consistencia de la metadata contra la Base de Datos
     is_consistent, validation_message = verify_document_consistency(
         ocr_name=ai_name,
         ocr_cedula=ai_cedula,
@@ -222,12 +202,10 @@ async def upload_document_auto(
         worker_cedula=str(patient.cedula)
     )
 
-    # El estatus documental reflejará si la IA detectó firmas y sellos reales
     doc_status = "validado" if has_signatures and is_consistent else "digitalizado"
     if not is_consistent:
         doc_status = "incompleto"
 
-    # 5. Guardar físicamente el archivo original en disco
     os.makedirs("uploads", exist_ok=True)
     timestamp = int(datetime.utcnow().timestamp())
     safe_filename = f"{patient_id}_{timestamp}_{file.filename}"
@@ -236,13 +214,12 @@ async def upload_document_auto(
     with open(file_path, "wb") as buffer:
         buffer.write(file_bytes)
 
-    # 6. Registrar los metadatos limpios, normalizados y validados en la base de datos
     new_doc = PatientDocument(
         patient_id=patient_id,
         file_name=ai_title,
         file_path=file_path,
         category=ai_category,
-        folder_number="S/N", # Se puede indexar después
+        folder_number="S/N",
         qr_code="",
         document_status=doc_status,
         uploaded_by=current_user.id
@@ -264,7 +241,171 @@ async def upload_document_auto(
         }
     }
 
-# 4. AUDITAR EXPEDIENTE AUTOMÁTICAMENTE CON IA (CORREGIDO Y OPTIMIZADO PARA PYLANCE)
+
+# 4. AUTO-REGISTRO DE TRABAJADOR Y DOCUMENTO MEDIANTE IA MULTIMODAL (Llama 4 Scout)
+@router.post("/auto-register", status_code=status.HTTP_201_CREATED)
+async def auto_register_worker_and_doc(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Pipeline DMS Premium: Recibe el escaneo de una carpeta, extrae la ficha del trabajador, crea el expediente y guarda el documento."""
+    file_bytes = await file.read()
+    content_type = str(file.content_type)
+    
+    base64_images = []
+    if "pdf" in content_type:
+        base64_images = convert_pdf_to_base64_images(file_bytes, mode="fast")
+    elif "image" in content_type:
+        base64_images = [encode_image_to_base64(file_bytes)]
+    else:
+        raise HTTPException(status_code=400, detail="Formato de archivo no soportado.")
+
+    if not base64_images:
+        raise HTTPException(status_code=400, detail="No se pudo procesar el documento visual.")
+
+    ai_service = AIService()
+    ai_data = ai_service.auto_register_worker_vision(base64_images)
+    
+    if not ai_data:
+        raise HTTPException(status_code=500, detail="La IA no logró extraer los datos del documento.")
+
+    first_name = ai_data.get("first_name", "")
+    last_name = ai_data.get("last_name", "")
+    cedula = ai_data.get("cedula", "")
+    address = ai_data.get("address", "")
+    raw_cargo = ai_data.get("cargo")
+    cargo = str(raw_cargo).strip() if raw_cargo else "No especificado"
+    if cargo.lower() in ("null", "none", "", "no especificado"):
+        cargo = "No especificado"
+    entry_date_raw = ai_data.get("birth_date", "")
+    phone = ai_data.get("phone", "")
+    email = ai_data.get("email", "")
+    category = ai_data.get("category", "Otros")
+    doc_title = ai_data.get("suggested_title", "Documento de Ingreso")
+    remarks = ai_data.get("remarks", "Expediente digitalizado automáticamente.")
+
+    if not first_name or not last_name or not cedula:
+        raise HTTPException(status_code=422, detail="La IA no pudo detectar los campos mínimos obligatorios.")
+
+    repo = PatientRepository(db)
+    existing_worker = repo.get_by_cedula(cedula)
+    if existing_worker:
+         raise HTTPException(status_code=400, detail=f"El trabajador con la C.I. {cedula} ya se encuentra registrado.")
+
+    # Normalizar fecha a objeto 'date' nativo de Python de forma segura
+    normalized_date_str = normalize_date(entry_date_raw)
+    parsed_date = date.today()
+    if normalized_date_str:
+        try:
+            parsed_date = date.fromisoformat(normalized_date_str)
+        except ValueError:
+            pass
+
+    formatted_notes = f"[ESTADO: ACTIVO] [DOCS: PENDIENTE] - {remarks}"
+    
+    db_patient = repo.create(PatientCreate(
+        first_name=first_name,
+        last_name=last_name,
+        cedula=cedula,
+        address=address,
+        cargo=cargo,
+        birth_date=parsed_date,
+        phone=phone,
+        email=email,
+        medical_history=formatted_notes
+    ))
+
+    os.makedirs("uploads", exist_ok=True)
+    timestamp = int(datetime.utcnow().timestamp())
+    safe_filename = f"{db_patient.id}_{timestamp}_{file.filename}"
+    file_path = f"uploads/{safe_filename}"
+
+    with open(file_path, "wb") as buffer:
+        buffer.write(file_bytes)
+
+    new_doc = PatientDocument(
+        patient_id=db_patient.id,
+        file_name=doc_title,
+        file_path=file_path,
+        category=category,
+        folder_number="S/N",
+        qr_code="",
+        document_status="digitalizado",
+        uploaded_by=current_user.id
+    )
+    db.add(new_doc)
+    db.commit()
+    db.refresh(new_doc)
+
+    return {
+        "message": "Expediente de trabajador creado y primer documento archivado de forma 100% automática con IA.",
+        "worker": db_patient,
+        "document": {
+            "title": doc_title,
+            "category": category,
+            "file_path": file_path
+        }
+    }
+
+
+# 5. MODIFICAR METADATA DE UN DOCUMENTO EXISTENTE
+@router.put("/documents/{document_id}", response_model=DocumentResponse)
+def update_document_metadata(
+    document_id: int,
+    doc_in: DocumentUpdate,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin)
+):
+    """Modifica la metadata de indexación de un documento de la bóveda."""
+    doc = db.query(PatientDocument).filter(PatientDocument.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado.")
+    
+    for field, value in doc_in.model_dump(exclude_unset=True).items():
+        setattr(doc, field, value)
+        
+    db.commit()
+    db.refresh(doc)
+    return doc
+
+
+# 6. ELIMINAR FÍSICAMENTE UN DOCUMENTO DE LA BÓVEDA
+@router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin)
+):
+    """Elimina el registro de la base de datos y borra el archivo físico del disco del servidor."""
+    doc = db.query(PatientDocument).filter(PatientDocument.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado en la bóveda.")
+        
+    # Extraemos el valor del path a un string de Python puro para Pylance
+    file_path_str = str(doc.file_path) if doc.file_path is not None else ""
+    if file_path_str and os.path.exists(file_path_str):
+        try:
+            os.remove(file_path_str)
+        except Exception as e:
+            print(f"No se pudo borrar el archivo físico: {e}")
+            
+    db.delete(doc)
+    db.commit()
+
+
+# 7. OBTENER LISTADO GLOBAL DE DOCUMENTOS INDEXADOS
+@router.get("/documents/all", response_model=List[DocumentResponse])
+def get_all_documents(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Obtiene el listado global de TODOS los documentos indexados en el hospital."""
+    documents = db.query(PatientDocument).order_by(PatientDocument.id.desc()).all()
+    return documents
+
+
+# 8. AUDITAR EXPEDIENTE AUTOMÁTICAMENTE CON IA (RESTABLECIDO)
 @router.post("/{patient_id}/audit", response_model=PatientResponse)
 def audit_worker_expediente(
     patient_id: int,
@@ -272,7 +413,7 @@ def audit_worker_expediente(
     current_user: User = Depends(get_current_user)
 ):
     """Analiza la base de datos de documentos de un trabajador, llama a la IA para verificar faltantes y actualiza su estatus."""
-    import re  # Importamos la librería de expresiones regulares de Python
+    import re
     
     repo = PatientRepository(db)
     patient = repo.get_by_id(patient_id)
@@ -289,7 +430,6 @@ def audit_worker_expediente(
     raw_history = patient.medical_history
     history_text = ""
     
-    # Evaluamos usando comparación explícita contra None (evita el error de __bool__)
     if raw_history is not None:
         history_text = str(raw_history)
 
@@ -304,7 +444,7 @@ def audit_worker_expediente(
         elif partial_match:
             work_status = partial_match.group(1)
 
-    # 5. Ejecutar la Auditoría Inteligente con Groq
+    # 5. Ejecutar la Auditoría Inteligente con Groq (Usa gpt-oss-20b de forma ultra rápida)
     ai_service = AIService()
     audit_results = ai_service.audit_expediente(
         estatus_laboral=work_status, 

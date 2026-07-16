@@ -11,6 +11,7 @@ class Patient(Base):
     last_name = Column(String(100), nullable=False)
     cedula = Column(String(50), unique=True, index=True, nullable=False)
     address = Column(String(255), nullable=True)
+    cargo = Column(String(100), nullable=True)
     birth_date = Column(Date, nullable=False)
     phone = Column(String(50), nullable=True)
     email = Column(String(255), unique=True, index=True, nullable=True)

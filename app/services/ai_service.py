@@ -23,7 +23,7 @@ class AIService:
 
         try:
             completion = self.client.chat.completions.create(
-                model="openai/gpt-oss-20b",  # <-- ACTUALIZADO: Migración al nuevo modelo de 1000 tps
+                model="openai/gpt-oss-20b",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message}
@@ -54,18 +54,17 @@ class AIService:
 
         try:
             completion = self.client.chat.completions.create(
-                model="openai/gpt-oss-20b",  # <-- ACTUALIZADO: Migración al nuevo modelo de 1000 tps
+                model="openai/gpt-oss-20b",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"Texto extraído del documento físico:\n{document_text}"}
                 ],
-                temperature=0.1,  # Temperatura ultra-baja para garantizar precisión y evitar alucinaciones
-                response_format={"type": "json_object"}  # Forzamos la salida en formato JSON estructurado
+                temperature=0.1,
+                response_format={"type": "json_object"}
             )
             
             response_content = completion.choices[0].message.content
             if response_content:
-                # Convertimos el string de la IA en un diccionario nativo de Python
                 return json.loads(response_content)
                 
             return {"category": "Otros", "suggested_title": "Documento Digitalizado"}
@@ -102,7 +101,7 @@ class AIService:
 
         try:
             completion = self.client.chat.completions.create(
-                model="openai/gpt-oss-20b",  # <-- ACTUALIZADO: Migración al nuevo modelo de 1000 tps
+                model="openai/gpt-oss-20b",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_content}
@@ -121,7 +120,7 @@ class AIService:
             return {"document_status": "PENDIENTE", "remarks": "Error de comunicación con el motor de auditoría."}
         
     def classify_document_vision(self, base64_images: list, mode: str = "fast") -> dict:
-        """Usa Llama 3.2 Vision de Groq para analizar visualmente e identificar firmas, sellos e información del papel."""
+        """Usa el nuevo modelo Llama 4 Scout de Groq para analizar visualmente e identificar firmas, sellos e información del papel."""
         import json
 
         system_prompt = (
@@ -157,9 +156,8 @@ class AIService:
             })
 
         try:
-            # Usamos Llama 3.2 Vision Preview para inferencia visual de alta velocidad
             completion = self.client.chat.completions.create(
-                model="llama-3.2-11b-vision-preview",
+                model="meta-llama/llama-4-scout-17b-16e-instruct",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_content}
@@ -176,3 +174,78 @@ class AIService:
         except Exception as e:
             print(f"Error en visión artificial de Groq: {e}")
             return {"category": "Otros", "extracted_name": "", "extracted_cedula": "", "extracted_date": "", "has_signatures_and_stamps": False, "suggested_title": "Digitalización"}
+        
+    def auto_register_worker_vision(self, base64_images: list) -> dict:
+        """
+        Analiza visualmente la primera página de un expediente escaneado para
+        extraer de forma autónoma la ficha de datos del trabajador y la clasificación del archivo.
+        """
+        import json
+
+        system_prompt = (
+            "Eres el registrador automático inteligente de Talento Humano del hospital.\n"
+            "Tu tarea es analizar visualmente la imagen de la planilla proporcionada y extraer "
+            "toda la información de forma exacta estructurándola en un JSON.\n\n"
+            
+            "REGLAS CRÍTICAS DE EXTRACCIÓN PARA LA PLANTILLA DEL HOSPITAL:\n"
+            "1. NOMBRE COMPLETO: Busca la línea 'NOMBRE COMPLETO:'. Extrae el nombre de pila en 'first_name' "
+            "y los apellidos en 'last_name'. Elimina títulos profesionales de cortesía como 'Dr.', 'Dra.', 'Lic.', 'Abog.'.\n"
+            "   Ejemplo: 'Dr. Ricardo Morales Pinto' -> first_name: 'Ricardo', last_name: 'Morales Pinto'.\n"
+            "2. CÉDULA DE IDENTIDAD: Busca la línea 'CÉDULA DE IDENTIDAD (C.I.):'. Extrae el valor alfanumérico exacto "
+            "en el campo 'cedula' (ej: 'V-12456789').\n"
+            "3. CARGO: Busca la palabra 'CARGO:' en la sección de DATOS LABORALES. Extrae TODO el texto literal "
+            "que viene inmediatamente después de los dos puntos (ej: 'Médico Internista - Unidad de Cuidados Intensivos') "
+            "en el campo 'cargo'. Es de vital importancia para el hospital que este campo NO sea null o vacío.\n"
+            "4. FECHA DE INGRESO: Busca la línea 'ESTATUS: Activo (con fecha de ingreso: DD-MM-YYYY)'. Extrae la fecha de "
+            "ingreso física (ej: '18-09-2008') y normalízala a formato estándar YYYY-MM-DD (ej: '2008-09-18') en el campo 'birth_date'.\n"
+            "5. CORREO ELECTRÓNICO: Busca el campo 'CORREO ELECTRÓNICO:'. Extrae el correo real del documento (ej: 'ricardo.morales@salud.gob.ve') "
+            "y guárdalo en el campo 'email'. Si no aparece, sugiere uno en base a su nombre.\n"
+            "6. DIRECCIÓN: Si no aparece explícitamente en el cuerpo del documento, pon null en el campo 'address'.\n\n"
+            
+            "Debes responder ÚNICAMENTE con un objeto JSON válido con este formato exacto:\n"
+            "{\n"
+            "  \"first_name\": \"Nombres del trabajador extraídos\",\n"
+            "  \"last_name\": \"Apellidos del trabajador extraídos\",\n"
+            "  \"cedula\": \"Cédula de identidad (ej: V-12345678)\",\n"
+            "  \"address\": \"Dirección de habitación o null\",\n"
+            "  \"cargo\": \"Cargo o posición laboral extraída de la línea CARGO: (ej: Médico Internista - Unidad de Cuidados Intensivos)\",\n"
+            "  \"birth_date\": \"Fecha de ingreso normalizada (YYYY-MM-DD)\",\n"
+            "  \"phone\": \"Teléfono o null\",\n"
+            "  \"email\": \"Correo electrónico real extraído del documento (ej: ricardo.morales@salud.gob.ve)\",\n"
+            "  \"category\": \"Clasificar el documento: Cédula, Contrato, Constancia, Certificado, Título, Seguro Social u Otros\",\n"
+            "  \"suggested_title\": \"Título descriptivo corto del documento\",\n"
+            "  \"remarks\": \"Observaciones o notas sobre lo que falta por digitalizar en este expediente físico\"\n"
+            "}\n\n"
+            "No agregues explicaciones, código markdown ni comentarios. Solo devuelve el objeto JSON de forma cruda."
+        )
+
+        user_content = []
+        user_content.append({"type": "text", "text": "Analiza la primera página de esta planilla del hospital y extrae la metadata estructurada:"})
+        
+        for img in base64_images:
+            user_content.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/png;base64,{img}"
+                }
+            })
+
+        try:
+            # Usamos Llama 4 Scout de alta velocidad para el procesamiento visual
+            completion = self.client.chat.completions.create(
+                model="meta-llama/llama-4-scout-17b-16e-instruct", # <-- MODELO DE VISIÓN DE LLAMA 4
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content}
+                ],
+                temperature=0.1,
+                response_format={"type": "json_object"}
+            )
+            
+            response_content = completion.choices[0].message.content
+            if response_content:
+                return json.loads(response_content)
+            return {}
+        except Exception as e:
+            print(f"Error en auto-registro por visión: {e}")
+            return {}

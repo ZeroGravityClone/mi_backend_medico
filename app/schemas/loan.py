@@ -19,3 +19,8 @@ class LoanResponse(LoanBase):
 
     class Config:
         from_attributes = True
+
+class LoanUpdate(BaseModel):
+    borrower_name: Optional[str] = None
+    expected_return_date: Optional[date] = None
+    status: Optional[str] = None  # "ACTIVO", "DEVUELTO", "VENCIDO"
