@@ -21,7 +21,6 @@ def get_current_user(
     )
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        # "sub" ahora contiene el username del usuario
         username: str = payload.get("sub")  # type: ignore
         if username is None:
             raise credentials_exception
@@ -29,7 +28,7 @@ def get_current_user(
         raise credentials_exception
         
     repo = UserRepository(db)
-    user = repo.get_user_by_username(username)  # <-- Buscamos por username
+    user = repo.get_user_by_username(username)
     if user is None:
         raise credentials_exception
         

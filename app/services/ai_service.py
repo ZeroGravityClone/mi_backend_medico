@@ -4,7 +4,6 @@ from app.core.config import settings
 
 class AIService:
     def __init__(self):
-        # Validación de seguridad: Evita errores de conexión si falta la API Key en el .env
         if not settings.GROQ_API_KEY or settings.GROQ_API_KEY == "":
             raise ValueError("La API Key de Groq no se pudo cargar. Verifica tu archivo .env")
             
@@ -143,7 +142,6 @@ class AIService:
             "No agregues explicaciones, código markdown ni bloques de código. Solo devuelve el objeto JSON."
         )
 
-        # Preparamos el contenido multimodal (Texto + Imágenes en Base64)
         user_content = []
         user_content.append({"type": "text", "text": f"Analiza las siguientes páginas en modo {mode} e indexa la información:"})
         
@@ -231,9 +229,8 @@ class AIService:
             })
 
         try:
-            # Usamos Llama 4 Scout de alta velocidad para el procesamiento visual
             completion = self.client.chat.completions.create(
-                model="meta-llama/llama-4-scout-17b-16e-instruct", # <-- MODELO DE VISIÓN DE LLAMA 4
+                model="meta-llama/llama-4-scout-17b-16e-instruct",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_content}

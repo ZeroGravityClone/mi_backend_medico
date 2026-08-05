@@ -39,7 +39,6 @@ def create_patient(
     """Registra un nuevo expediente de trabajador (Solo Administradores)."""
     repo = PatientRepository(db)
     
-    # 1. Validar duplicado de cédula
     if patient_in.cedula:
         existing_cedula = repo.get_by_cedula(patient_in.cedula)
         if existing_cedula:
@@ -48,7 +47,6 @@ def create_patient(
                 detail="Ya existe un expediente registrado con esa Cédula de Identidad."
             )
             
-    # 2. Validar duplicado de email
     if patient_in.email:
         existing_email = repo.get_by_email(patient_in.email)
         if existing_email:
@@ -92,10 +90,9 @@ def delete_patient(
 
 
 # ===========================================================================
-#             NUEVOS ENDPOINTS: NÚCLEO DE GESTIÓN DOCUMENTAL (DMS)
+#             ENDPOINTS PARA LA GESTIÓN DE DOCUMENTOS
 # ===========================================================================
 
-# 1. SUBIR, INDEXAR Y REGISTRAR METADATA DE DOCUMENTO DE FORMA MANUAL
 @router.post("/{patient_id}/documents", status_code=status.HTTP_201_CREATED)
 def upload_patient_document(
     patient_id: int,
@@ -139,8 +136,6 @@ def upload_patient_document(
     
     return {"message": "Documento indexado con éxito en la bóveda", "file_path": file_path}
 
-
-# 2. OBTENER EXPEDIENTE DOCUMENTAL COMPLETO (Por Paciente)
 @router.get("/{patient_id}/documents", response_model=List[DocumentResponse])
 def get_patient_documents(
     patient_id: int,
@@ -151,8 +146,6 @@ def get_patient_documents(
     documents = db.query(PatientDocument).filter(PatientDocument.patient_id == patient_id).all()
     return documents
 
-
-# 3. ESCANEAR, CONVERTIR, EVALUAR VISUALMENTE CON IA Y VALIDAR INTEGRIDAD (Llama 4 Scout)
 @router.post("/{patient_id}/documents/auto", status_code=status.HTTP_201_CREATED)
 async def upload_document_auto(
     patient_id: int,
@@ -191,7 +184,6 @@ async def upload_document_auto(
     has_signatures = ai_data.get("has_signatures_and_stamps", False)
     ai_title = ai_data.get("suggested_title", "Digitalización")
 
-    # Validación y Normalización
     normalized_date_str = normalize_date(ai_date_raw)
     
     is_consistent, validation_message = verify_document_consistency(
@@ -241,8 +233,6 @@ async def upload_document_auto(
         }
     }
 
-
-# 4. AUTO-REGISTRO DE TRABAJADOR Y DOCUMENTO MEDIANTE IA MULTIMODAL (Llama 4 Scout)
 @router.post("/auto-register", status_code=status.HTTP_201_CREATED)
 async def auto_register_worker_and_doc(
     file: UploadFile = File(...),
@@ -293,7 +283,6 @@ async def auto_register_worker_and_doc(
     if existing_worker:
          raise HTTPException(status_code=400, detail=f"El trabajador con la C.I. {cedula} ya se encuentra registrado.")
 
-    # Normalizar fecha a objeto 'date' nativo de Python de forma segura
     normalized_date_str = normalize_date(entry_date_raw)
     parsed_date = date.today()
     if normalized_date_str:
@@ -348,8 +337,6 @@ async def auto_register_worker_and_doc(
         }
     }
 
-
-# 5. MODIFICAR METADATA DE UN DOCUMENTO EXISTENTE
 @router.put("/documents/{document_id}", response_model=DocumentResponse)
 def update_document_metadata(
     document_id: int,
@@ -370,7 +357,7 @@ def update_document_metadata(
     return doc
 
 
-# 6. ELIMINAR FÍSICAMENTE UN DOCUMENTO DE LA BÓVEDA
+
 @router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_document(
     document_id: int,
@@ -382,7 +369,6 @@ def delete_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Documento no encontrado en la bóveda.")
         
-    # Extraemos el valor del path a un string de Python puro para Pylance
     file_path_str = str(doc.file_path) if doc.file_path is not None else ""
     if file_path_str and os.path.exists(file_path_str):
         try:
@@ -393,8 +379,6 @@ def delete_document(
     db.delete(doc)
     db.commit()
 
-
-# 7. OBTENER LISTADO GLOBAL DE DOCUMENTOS INDEXADOS
 @router.get("/documents/all", response_model=List[DocumentResponse])
 def get_all_documents(
     db: Session = Depends(get_db),
@@ -404,8 +388,6 @@ def get_all_documents(
     documents = db.query(PatientDocument).order_by(PatientDocument.id.desc()).all()
     return documents
 
-
-# 8. AUDITAR EXPEDIENTE AUTOMÁTICAMENTE CON IA (RESTABLECIDO)
 @router.post("/{patient_id}/audit", response_model=PatientResponse)
 def audit_worker_expediente(
     patient_id: int,
@@ -420,20 +402,16 @@ def audit_worker_expediente(
     if not patient:
         raise HTTPException(status_code=404, detail="Expediente de personal no encontrado.")
 
-    # 1. Obtener todos los documentos del paciente en la base de datos
     documents = db.query(PatientDocument).filter(PatientDocument.patient_id == patient_id).all()
     
-    # 2. Extraer una lista limpia con las categorías de los documentos ya digitalizados
     existing_categories = [doc.category for doc in documents]
 
-    # 3. Convertimos explícitamente a tipos nativos para que Pylance esté contento
     raw_history = patient.medical_history
     history_text = ""
     
     if raw_history is not None:
         history_text = str(raw_history)
 
-    # 4. Desempaquetar el estatus laboral de forma segura usando el texto casteado
     work_status = "ACTIVO"
     if history_text:
         full_match = re.match(r"^\[ESTADO: (.*?)\] \[DOCS: (.*?)\] - (.*)$", history_text)
@@ -444,7 +422,6 @@ def audit_worker_expediente(
         elif partial_match:
             work_status = partial_match.group(1)
 
-    # 5. Ejecutar la Auditoría Inteligente con Groq (Usa gpt-oss-20b de forma ultra rápida)
     ai_service = AIService()
     audit_results = ai_service.audit_expediente(
         estatus_laboral=work_status, 
@@ -454,10 +431,8 @@ def audit_worker_expediente(
     ai_doc_status = audit_results.get("document_status", "PENDIENTE")
     ai_remarks = audit_results.get("remarks", "Auditoría realizada.")
 
-    # 6. Empaquetar el nuevo resultado y guardarlo en la base de datos
     new_formatted_notes = f"[ESTADO: {work_status}] [DOCS: {ai_doc_status}] - {ai_remarks}"
     
-    # Actualizar el registro del paciente usando setattr
     setattr(patient, "medical_history", new_formatted_notes)
     db.commit()
     db.refresh(patient)

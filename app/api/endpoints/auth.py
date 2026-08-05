@@ -16,7 +16,6 @@ def login_access_token(
     form_data: OAuth2PasswordRequestForm = Depends()
 ):
     repo = UserRepository(db)
-    # form_data.username se asocia ahora directamente al username de la base de datos
     user = repo.get_user_by_username(form_data.username)
     
     if not user:
@@ -31,7 +30,6 @@ def login_access_token(
         raise HTTPException(status_code=400, detail="Usuario inactivo.")
 
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    # El Token guardará el username en su subject
     access_token = create_access_token(
         subject=user.username, expires_delta=access_token_expires
     )

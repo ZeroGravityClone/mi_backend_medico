@@ -30,16 +30,12 @@ class PatientDocument(Base):
     file_name = Column(String(255), nullable=False)
     file_path = Column(String(255), nullable=False)
     
-    # --- NUEVA METADATA DOCUMENTAL PROFESIONAL ---
-    category = Column(String(100), nullable=False)       # Cédula, Contrato, etc.
-    folder_number = Column(String(100), nullable=True)   # Ubicación física de la carpeta
-    qr_code = Column(String(100), nullable=True)         # Código QR indexado
-    document_status = Column(String(50), default="digitalizado", nullable=False) # digitalizado, validado, etc.
+    category = Column(String(100), nullable=False)       
+    folder_number = Column(String(100), nullable=True)   
+    qr_code = Column(String(100), nullable=True)         
+    document_status = Column(String(50), default="digitalizado", nullable=False) 
     
-    # Auditoría: Quién subió el archivo (Relacionado con la tabla users)
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True) 
-    # ----------------------------------------------
-
     uploaded_at = Column(DateTime, default=datetime.utcnow)
 
     patient = relationship("Patient", back_populates="documents")

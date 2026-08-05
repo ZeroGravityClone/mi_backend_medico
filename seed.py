@@ -4,7 +4,6 @@ import unicodedata
 from app.db.database import SessionLocal
 from app.models.patient import Patient
 
-# Listas de datos para generación aleatoria realista (LATAM)
 first_names = [
     "Carlos", "María", "Pedro", "Ana", "Juan", "José", "Carmen", "Luis", 
     "Francisco", "Miguel", "Isabel", "Rafael", "Elena", "Jorge", "Lucía", 
@@ -59,7 +58,6 @@ def seed_data():
     print("🚀 Iniciando la inserción de 100 expedientes de prueba de forma segura...")
     
     try:
-        # Obtener cuántos registros hay actualmente en la base de datos
         current_count = db.query(Patient).count()
         needed = 100 - current_count
 
@@ -75,20 +73,16 @@ def seed_data():
             fn_raw = random.choice(first_names)
             ln_raw = random.choice(last_names)
             
-            # Limpiamos acentos para los correos
             fn_clean = clean_string(fn_raw)
             ln_clean = clean_string(ln_raw)
             
-            # Generamos cédulas únicas
             cedula_num = random.randint(5000000, 30000000)
             cedula = f"V-{cedula_num}"
             
-            # Evitamos duplicar cédulas
             existing_cedula = db.query(Patient).filter(Patient.cedula == cedula).first()
             if existing_cedula:
                 continue
                 
-            # Generamos correos únicos y limpios (con un número aleatorio de 3 dígitos)
             email_addr = f"{fn_clean}.{ln_clean}{random.randint(10, 999)}@hospital.com"
             existing_email = db.query(Patient).filter(Patient.email == email_addr).first()
             if existing_email:
@@ -98,7 +92,6 @@ def seed_data():
             doc_status = random.choice(doc_statuses)
             notes = random.choice(notes_pool)
             
-            # Empaquetamos la metadata
             formatted_notes = f"[ESTADO: {status}] [DOCS: {doc_status}] - {notes}"
             
             patient = Patient(
