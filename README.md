@@ -69,6 +69,9 @@ El sistema evoluciona el modelo tradicional de CRUD a una **Plataforma de Gesti�
 ### Alertas e Indicadores (`/alerts`)
 * `GET /alerts/summary` — Resumen dinámico de préstamos vencidos, por vencer y expurgos legales.
 
+<img width="1364" height="768" alt="image" src="https://github.com/user-attachments/assets/9931e015-fbd2-47ee-a924-6024d2baf7c5" />
+
+
 ---
 
 ## 📦 Instalación y Configuración Local
